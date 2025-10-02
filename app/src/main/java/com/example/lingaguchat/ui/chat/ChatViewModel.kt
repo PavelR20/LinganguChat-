@@ -1,12 +1,11 @@
+// ChatViewModel.kt
 package com.example.lingaguchat.ui.chat
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 
 class ChatViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
@@ -14,29 +13,61 @@ class ChatViewModel : ViewModel() {
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages
 
-    init {
-        listenMessages()
-    }
+    private var sentReg: ListenerRegistration? = null
+    private var recvReg: ListenerRegistration? = null
+    private var sentList: List<Message> = emptyList()
+    private var recvList: List<Message> = emptyList()
 
-    private fun listenMessages() {
-        db.collection("messages")
-            .orderBy("timestamp", Query.Direction.ASCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                if (snapshot != null) {
-                    val msgs = snapshot.toObjects(Message::class.java)
-                    _messages.value = msgs
+    fun listenPrivateMessages(currentUser: String, otherUser: String) {
+        sentReg?.remove(); recvReg?.remove()
+        sentList = emptyList(); recvList = emptyList()
+        _messages.value = emptyList()
+
+        sentReg = db.collection("messages")
+            .whereEqualTo("sender", currentUser)
+            .whereEqualTo("receiver", otherUser)
+            .addSnapshotListener { snap, e ->
+                if (e != null) {
+                    println("🔥 sent query error: ${e.message}")
+                    return@addSnapshotListener
                 }
+                sentList = snap?.toObjects(Message::class.java).orEmpty()
+                publishMerged()
+            }
+
+        recvReg = db.collection("messages")
+            .whereEqualTo("sender", otherUser)
+            .whereEqualTo("receiver", currentUser)
+            .addSnapshotListener { snap, e ->
+                if (e != null) {
+                    println("🔥 recv query error: ${e.message}")
+                    return@addSnapshotListener
+                }
+                recvList = snap?.toObjects(Message::class.java).orEmpty()
+                publishMerged()
             }
     }
 
-    fun sendMessage(sender: String, text: String) {
+    private fun publishMerged() {
+        _messages.value = (sentList + recvList)
+            .distinctBy { it.id }
+            .sortedBy { it.timestamp }
+    }
+
+    fun sendMessage(sender: String, receiver: String, text: String) {
+        val docRef = db.collection("messages").document()
         val newMessage = Message(
-            id = db.collection("messages").document().id,
+            id = docRef.id,
             sender = sender,
+            receiver = receiver,
             text = text,
             timestamp = System.currentTimeMillis()
         )
-        db.collection("messages").document(newMessage.id).set(newMessage)
+        docRef.set(newMessage)
+    }
+
+    override fun onCleared() {
+        sentReg?.remove(); recvReg?.remove()
+        super.onCleared()
     }
 }
