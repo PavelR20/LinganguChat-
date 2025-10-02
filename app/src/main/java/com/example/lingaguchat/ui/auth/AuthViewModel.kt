@@ -5,20 +5,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.auth
 
 
 data class AuthUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val userEmail: String? = Firebase.auth.currentUser?.email
+    val userEmail: String? = FirebaseAuth.getInstance().currentUser?.email
 ) {
     val isAuthenticated: Boolean get() = userEmail != null
 }
 
 class AuthViewModel : ViewModel() {
 
-    private val auth: FirebaseAuth = Firebase.auth
+    private val auth: FirebaseAuth = FirebaseAuth.getInstance()
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
         val currentUser = firebaseAuth.currentUser
         updateState {
