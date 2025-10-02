@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1068030916263",
+    "project_id": "lingaguchat",
+    "storage_bucket": "lingaguchat.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1068030916263:android:5dfcaf9db1a0bb0dd8cd82",
+        "android_client_info": {
+          "package_name": "com.example.lingaguchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPqLS0OoIKukY70dcMaNkkfwK__LMQSD0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
