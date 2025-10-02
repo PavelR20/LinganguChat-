@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.lingaguchat.ui.auth.AuthScreen
 import com.example.lingaguchat.ui.auth.AuthViewModel
-import com.example.lingaguchat.ui.auth.ChatHomeScreen
+import com.example.lingaguchat.ui.chat.ChatScreen   // 👈 importa tu ChatScreen
 import com.example.lingaguchat.ui.theme.LingaguChatTheme
 
 class MainActivity : ComponentActivity() {
@@ -27,10 +27,8 @@ class MainActivity : ComponentActivity() {
                     val uiState by authViewModel.uiState
 
                     if (uiState.isAuthenticated) {
-                        ChatHomeScreen(
-                            email = uiState.userEmail.orEmpty(),
-                            isLoading = uiState.isLoading,
-                            onSignOut = authViewModel::signOut
+                        ChatScreen(
+                            currentUserEmail = uiState.userEmail.orEmpty()
                         )
                     } else {
                         AuthScreen(
