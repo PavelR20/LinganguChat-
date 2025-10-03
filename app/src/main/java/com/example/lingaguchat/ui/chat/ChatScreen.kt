@@ -4,13 +4,14 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
@@ -37,9 +38,16 @@ fun ChatScreen(
     onOpenDrawer: () -> Unit
 ) {
     val messages by chatViewModel.messages.collectAsState()
+    val listState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var isSendingImage by remember { mutableStateOf(false) }
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
 
     val context = LocalContext.current
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -79,7 +87,8 @@ fun ChatScreen(
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .padding(8.dp)
+                .padding(8.dp),
+            state = listState
         ) {
             items(items = messages, key = { it.id }) { msg ->
                 val isMe = msg.sender == currentUserEmail
@@ -87,94 +96,43 @@ fun ChatScreen(
                 val timeText = DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
                     .format(Date(msg.timestamp))
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
-                ) {
-                    Text(
-                        text = who,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isMe) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.secondary
-                    )
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (isMe)
-                            MaterialTheme.colorScheme.primaryContainer
-                        else
-                            MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        when (msg.type) {
-                            MessageType.IMAGE -> {
-                                Column(
-                                    modifier = Modifier.padding(8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    msg.imageUrl?.let { imageUrl ->
-                                        AsyncImage(
-                                            model = imageUrl,
-                                            contentDescription = "Imagen enviada",
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .sizeIn(maxWidth = 220.dp, maxHeight = 220.dp),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    }
-                                    if (msg.text.isNotBlank()) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = msg.text,
-                                            style = MaterialTheme.typography.bodyLarge
-                                        )
-                                    }
-                                }
-                            }
-
-                            MessageType.TEXT -> {
-                                Text(
-                                    text = msg.text,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                    Text(
-                        text = timeText,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                MessageBubble(
+                    name = who,
+                    message = msg,
+                    isCurrentUser = isMe,
+                    timeText = timeText
+                )
             }
         }
 
-        selectedImageUri?.let { imageUri ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                tonalElevation = 4.dp,
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Box {
-                    AsyncImage(
-                        model = imageUri,
-                        contentDescription = "Imagen a enviar",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 240.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    IconButton(
-                        onClick = { selectedImageUri = null },
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Quitar imagen"
+        AnimatedVisibility(visible = selectedImageUri != null) {
+            selectedImageUri?.let { imageUri ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    tonalElevation = 4.dp,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Box {
+                        AsyncImage(
+                            model = imageUri,
+                            contentDescription = "Imagen a enviar",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Crop
                         )
+                        IconButton(
+                            onClick = { selectedImageUri = null },
+                            modifier = Modifier.align(Alignment.TopEnd)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Quitar imagen"
+                            )
+                        }
                     }
                 }
             }
@@ -222,6 +180,7 @@ fun ChatScreen(
                     }
                 )
             }
+            val sendEnabled = !isSendingImage && (text.isNotBlank() || selectedImageUri != null)
             Button(
                 onClick = {
                     val trimmedText = text.trim()
@@ -259,7 +218,7 @@ fun ChatScreen(
                         }
                     }
                 },
-                enabled = !isSendingImage && (text.isNotBlank() || selectedImageUri != null)
+                enabled = sendEnabled
             ) {
                 if (isSendingImage) {
                     CircularProgressIndicator(
@@ -272,5 +231,73 @@ fun ChatScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MessageBubble(
+    name: String,
+    message: Message,
+    isCurrentUser: Boolean,
+    timeText: String,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalAlignment = if (isCurrentUser) Alignment.End else Alignment.Start
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isCurrentUser) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.secondary
+        )
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = if (isCurrentUser)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            when (message.type) {
+                MessageType.IMAGE -> {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        message.imageUrl?.let { imageUrl ->
+                            AsyncImage(
+                                model = imageUrl,
+                                contentDescription = "Imagen enviada",
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .sizeIn(maxWidth = 220.dp, maxHeight = 220.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                        if (message.text.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = message.text,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+
+                MessageType.TEXT -> {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            text = timeText,
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
