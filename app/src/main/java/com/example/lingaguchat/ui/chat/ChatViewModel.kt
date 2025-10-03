@@ -14,6 +14,9 @@ class ChatViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
     private val storage = FirebaseStorage.getInstance()
 
+    private val messagesCollection = db.collection("messages")
+    private val storageFolder = storage.reference.child("chat_images")
+
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages
 
@@ -27,7 +30,7 @@ class ChatViewModel : ViewModel() {
         sentList = emptyList(); recvList = emptyList()
         _messages.value = emptyList()
 
-        sentReg = db.collection("messages")
+        sentReg = messagesCollection
             .whereEqualTo("sender", currentUser)
             .whereEqualTo("receiver", otherUser)
             .addSnapshotListener { snap, e ->
@@ -39,7 +42,7 @@ class ChatViewModel : ViewModel() {
                 publishMerged()
             }
 
-        recvReg = db.collection("messages")
+        recvReg = messagesCollection
             .whereEqualTo("sender", otherUser)
             .whereEqualTo("receiver", currentUser)
             .addSnapshotListener { snap, e ->
@@ -59,7 +62,7 @@ class ChatViewModel : ViewModel() {
     }
 
     fun sendMessage(sender: String, receiver: String, text: String) {
-        val docRef = db.collection("messages").document()
+        val docRef = messagesCollection.document()
         val newMessage = Message(
             id = docRef.id,
             sender = sender,
@@ -76,10 +79,10 @@ class ChatViewModel : ViewModel() {
         receiver: String,
         imageUri: Uri,
         caption: String = "",
-        onResult: (Boolean) -> Unit = {}
+        onResult: (Boolean) -> Unit = {},
     ) {
-        val imageRef = storage.reference
-            .child("chat_images/${UUID.randomUUID()}_${imageUri.lastPathSegment ?: "image"}")
+        val fileName = "${UUID.randomUUID()}_${imageUri.lastPathSegment ?: "image"}"
+        val imageRef = storageFolder.child(fileName)
 
         imageRef.putFile(imageUri)
             .continueWithTask { task ->
@@ -89,7 +92,7 @@ class ChatViewModel : ViewModel() {
                 imageRef.downloadUrl
             }
             .addOnSuccessListener { downloadUri ->
-                val docRef = db.collection("messages").document()
+                val docRef = messagesCollection.document()
                 val imageMessage = Message(
                     id = docRef.id,
                     sender = sender,
