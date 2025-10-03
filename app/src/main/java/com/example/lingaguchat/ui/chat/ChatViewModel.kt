@@ -75,6 +75,7 @@ class ChatViewModel : ViewModel() {
         sender: String,
         receiver: String,
         imageUri: Uri,
+        caption: String = "",
         onResult: (Boolean) -> Unit = {}
     ) {
         val imageRef = storage.reference
@@ -93,7 +94,7 @@ class ChatViewModel : ViewModel() {
                     id = docRef.id,
                     sender = sender,
                     receiver = receiver,
-                    text = "",
+                    text = caption,
                     imageUrl = downloadUri.toString(),
                     type = MessageType.IMAGE,
                     timestamp = System.currentTimeMillis()
