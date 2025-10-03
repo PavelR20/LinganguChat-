@@ -26,14 +26,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     currentUserEmail: String,
-    selectedUserEmail: String,
+    destination: ChatDestination,
     chatViewModel: ChatViewModel = viewModel(),
     onOpenDrawer: () -> Unit
 ) {
@@ -56,27 +58,103 @@ fun ChatScreen(
         selectedImageUri = uri
     }
 
-    // nombres para UI
-    var contactName by remember { mutableStateOf(selectedUserEmail.substringBefore("@")) }
-    var meName by remember { mutableStateOf(currentUserEmail.substringBefore("@")) }
+    val db = remember { FirebaseFirestore.getInstance() }
 
-    // Cargar nombres y activar listeners del chat
-    LaunchedEffect(selectedUserEmail) {
-        val db = FirebaseFirestore.getInstance()
-        db.collection("users").document(selectedUserEmail).get()
-            .addOnSuccessListener { doc ->
-                contactName = doc.getString("name") ?: selectedUserEmail.substringBefore("@")
+    var title by remember { mutableStateOf("") }
+    var subtitle by remember { mutableStateOf<String?>(null) }
+    var memberNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var groupMembers by remember { mutableStateOf<List<String>>(if (destination is ChatDestination.Group) destination.members else emptyList()) }
+
+    DisposableEffect(destination) {
+        val usersCollection = db.collection("users")
+        var meReg: ListenerRegistration? = null
+        var contactReg: ListenerRegistration? = null
+        val groupRegs = mutableListOf<ListenerRegistration>()
+        var groupInfoReg: ListenerRegistration? = null
+
+        memberNames = emptyMap()
+        subtitle = null
+
+        when (destination) {
+            is ChatDestination.Private -> {
+                title = destination.email.substringBefore("@")
+                chatViewModel.listenPrivateMessages(currentUserEmail, destination.email)
+
+                meReg = usersCollection.document(currentUserEmail)
+                    .addSnapshotListener { snapshot, _ ->
+                        val meName = snapshot?.getString("name") ?: currentUserEmail.substringBefore("@")
+                        memberNames = memberNames.toMutableMap().apply { put(currentUserEmail, meName) }
+                    }
+
+                contactReg = usersCollection.document(destination.email)
+                    .addSnapshotListener { snapshot, _ ->
+                        val name = snapshot?.getString("name") ?: destination.email.substringBefore("@")
+                        memberNames = memberNames.toMutableMap().apply { put(destination.email, name) }
+                        val isOnline = snapshot?.getBoolean("online") ?: false
+                        val lastSeen = snapshot?.getLong("lastSeen")
+                        subtitle = if (isOnline) {
+                            "En línea"
+                        } else {
+                            lastSeen?.let { formatLastSeen(it) } ?: "Desconectado"
+                        }
+                        title = name
+                    }
             }
-        db.collection("users").document(currentUserEmail).get()
-            .addOnSuccessListener { doc ->
-                meName = doc.getString("name") ?: currentUserEmail.substringBefore("@")
+
+            is ChatDestination.Group -> {
+                title = destination.name
+                groupMembers = destination.members
+                chatViewModel.listenGroupMessages(destination.id)
+
+                groupInfoReg = db.collection("groups")
+                    .document(destination.id)
+                    .addSnapshotListener { snapshot, _ ->
+                        if (snapshot != null && snapshot.exists()) {
+                            title = snapshot.getString("name") ?: destination.name
+                            val members = snapshot.get("members") as? List<String>
+                            if (!members.isNullOrEmpty()) {
+                                groupMembers = members
+                            }
+                        }
+                    }
+
+                val allMembers = (destination.members + currentUserEmail).distinct()
+                allMembers.forEach { email ->
+                    val reg = usersCollection.document(email)
+                        .addSnapshotListener { snapshot, _ ->
+                            val name = snapshot?.getString("name") ?: email.substringBefore("@")
+                            memberNames = memberNames.toMutableMap().apply { put(email, name) }
+                        }
+                    groupRegs += reg
+                }
             }
-        chatViewModel.listenPrivateMessages(currentUserEmail, selectedUserEmail)
+        }
+
+        onDispose {
+            meReg?.remove()
+            contactReg?.remove()
+            groupRegs.forEach { it.remove() }
+            groupInfoReg?.remove()
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Chat con $contactName") },
+            title = {
+                Column {
+                    Text(title)
+                    subtitle?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                    if (destination is ChatDestination.Group && groupMembers.isNotEmpty()) {
+                        val membersText = groupMembers
+                            .map { memberNames[it] ?: it.substringBefore("@") }
+                            .joinToString(", ")
+                        Text(
+                            text = "Miembros: $membersText",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            },
             navigationIcon = {
                 IconButton(onClick = { onOpenDrawer() }) {
                     Icon(Icons.Default.Menu, contentDescription = "Menú")
@@ -92,7 +170,7 @@ fun ChatScreen(
         ) {
             items(items = messages, key = { it.id }) { msg ->
                 val isMe = msg.sender == currentUserEmail
-                val who = if (isMe) meName else contactName
+                val who = memberNames[msg.sender] ?: msg.sender.substringBefore("@")
                 val timeText = DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
                     .format(Date(msg.timestamp))
 
@@ -188,32 +266,65 @@ fun ChatScreen(
                     when {
                         imageUri != null -> {
                             isSendingImage = true
-                            chatViewModel.sendImageMessage(
-                                sender = currentUserEmail,
-                                receiver = selectedUserEmail,
-                                imageUri = imageUri,
-                                caption = trimmedText
-                            ) { success ->
-                                isSendingImage = false
-                                if (success) {
-                                    text = ""
-                                    selectedImageUri = null
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        "No se pudo enviar la imagen",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                            when (destination) {
+                                is ChatDestination.Private -> {
+                                    chatViewModel.sendDirectImageMessage(
+                                        sender = currentUserEmail,
+                                        receiver = destination.email,
+                                        imageUri = imageUri,
+                                        caption = trimmedText
+                                    ) { success ->
+                                        isSendingImage = false
+                                        if (success) {
+                                            text = ""
+                                            selectedImageUri = null
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "No se pudo enviar la imagen",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                }
+                                is ChatDestination.Group -> {
+                                    chatViewModel.sendGroupImageMessage(
+                                        sender = currentUserEmail,
+                                        groupId = destination.id,
+                                        participants = groupMembers,
+                                        imageUri = imageUri,
+                                        caption = trimmedText
+                                    ) { success ->
+                                        isSendingImage = false
+                                        if (success) {
+                                            text = ""
+                                            selectedImageUri = null
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "No se pudo enviar la imagen",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         trimmedText.isNotBlank() -> {
-                            chatViewModel.sendMessage(
-                                currentUserEmail,
-                                selectedUserEmail,
-                                trimmedText
-                            )
+                            when (destination) {
+                                is ChatDestination.Private -> chatViewModel.sendDirectMessage(
+                                    currentUserEmail,
+                                    destination.email,
+                                    trimmedText
+                                )
+                                is ChatDestination.Group -> chatViewModel.sendGroupMessage(
+                                    sender = currentUserEmail,
+                                    groupId = destination.id,
+                                    participants = groupMembers,
+                                    text = trimmedText
+                                )
+                            }
                             text = ""
                         }
                     }
@@ -232,6 +343,23 @@ fun ChatScreen(
             }
         }
     }
+}
+
+private fun formatLastSeen(lastSeen: Long): String {
+    val calendar = Calendar.getInstance().apply { timeInMillis = lastSeen }
+    val formatter: DateFormat = if (isSameDay(calendar.timeInMillis, System.currentTimeMillis())) {
+        DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
+    } else {
+        SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
+    }
+    return "Últ. vez ${formatter.format(Date(lastSeen))}"
+}
+
+private fun isSameDay(time1: Long, time2: Long): Boolean {
+    val cal1 = Calendar.getInstance().apply { timeInMillis = time1 }
+    val cal2 = Calendar.getInstance().apply { timeInMillis = time2 }
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+        cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
 }
 
 @Composable
