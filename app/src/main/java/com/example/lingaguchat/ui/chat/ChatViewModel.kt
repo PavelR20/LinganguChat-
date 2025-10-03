@@ -22,10 +22,12 @@ class ChatViewModel : ViewModel() {
 
     private var sentReg: ListenerRegistration? = null
     private var recvReg: ListenerRegistration? = null
+    private var groupReg: ListenerRegistration? = null
     private var sentList: List<Message> = emptyList()
     private var recvList: List<Message> = emptyList()
 
     fun listenPrivateMessages(currentUser: String, otherUser: String) {
+        groupReg?.remove(); groupReg = null
         sentReg?.remove(); recvReg?.remove()
         sentList = emptyList(); recvList = emptyList()
         _messages.value = emptyList()
@@ -38,7 +40,9 @@ class ChatViewModel : ViewModel() {
                     println("🔥 sent query error: ${e.message}")
                     return@addSnapshotListener
                 }
-                sentList = snap?.toObjects(Message::class.java).orEmpty()
+                sentList = snap?.toObjects(Message::class.java)
+                    ?.map(::normalizeMessage)
+                    .orEmpty()
                 publishMerged()
             }
 
@@ -50,8 +54,31 @@ class ChatViewModel : ViewModel() {
                     println("🔥 recv query error: ${e.message}")
                     return@addSnapshotListener
                 }
-                recvList = snap?.toObjects(Message::class.java).orEmpty()
+                recvList = snap?.toObjects(Message::class.java)
+                    ?.map(::normalizeMessage)
+                    .orEmpty()
                 publishMerged()
+            }
+    }
+
+    fun listenGroupMessages(groupId: String) {
+        sentReg?.remove(); recvReg?.remove()
+        sentReg = null; recvReg = null
+        sentList = emptyList(); recvList = emptyList()
+        _messages.value = emptyList()
+
+        groupReg?.remove()
+        groupReg = messagesCollection
+            .whereEqualTo("groupId", groupId)
+            .addSnapshotListener { snap, e ->
+                if (e != null) {
+                    println("🔥 group query error: ${e.message}")
+                    return@addSnapshotListener
+                }
+                val groupMessages = snap?.toObjects(Message::class.java)
+                    ?.map(::normalizeMessage)
+                    .orEmpty()
+                _messages.value = groupMessages.sortedBy { it.timestamp }
             }
     }
 
@@ -61,25 +88,88 @@ class ChatViewModel : ViewModel() {
             .sortedBy { it.timestamp }
     }
 
-    fun sendMessage(sender: String, receiver: String, text: String) {
+    fun sendDirectMessage(sender: String, receiver: String, text: String) {
+        if (text.isBlank()) return
         val docRef = messagesCollection.document()
         val newMessage = Message(
             id = docRef.id,
             sender = sender,
             receiver = receiver,
-            text = text,
+            groupId = null,
+            participants = listOf(sender, receiver).distinct(),
+            text = MessageCipher.encrypt(text),
             type = MessageType.TEXT,
             timestamp = System.currentTimeMillis()
         )
         docRef.set(newMessage)
     }
 
-    fun sendImageMessage(
+    fun sendGroupMessage(
+        sender: String,
+        groupId: String,
+        participants: List<String>,
+        text: String
+    ) {
+        if (text.isBlank()) return
+        val docRef = messagesCollection.document()
+        val message = Message(
+            id = docRef.id,
+            sender = sender,
+            receiver = "",
+            groupId = groupId,
+            participants = (participants + sender).distinct(),
+            text = MessageCipher.encrypt(text),
+            type = MessageType.TEXT,
+            timestamp = System.currentTimeMillis()
+        )
+        docRef.set(message)
+    }
+
+    fun sendDirectImageMessage(
         sender: String,
         receiver: String,
         imageUri: Uri,
         caption: String = "",
         onResult: (Boolean) -> Unit = {},
+    ) {
+        uploadAndSendImage(
+            sender = sender,
+            receiver = receiver,
+            groupId = null,
+            participants = listOf(sender, receiver).distinct(),
+            imageUri = imageUri,
+            caption = caption,
+            onResult = onResult
+        )
+    }
+
+    fun sendGroupImageMessage(
+        sender: String,
+        groupId: String,
+        participants: List<String>,
+        imageUri: Uri,
+        caption: String = "",
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        uploadAndSendImage(
+            sender = sender,
+            receiver = "",
+            groupId = groupId,
+            participants = (participants + sender).distinct(),
+            imageUri = imageUri,
+            caption = caption,
+            onResult = onResult
+        )
+    }
+
+    private fun uploadAndSendImage(
+        sender: String,
+        receiver: String?,
+        groupId: String?,
+        participants: List<String>,
+        imageUri: Uri,
+        caption: String,
+        onResult: (Boolean) -> Unit
     ) {
         val fileName = "${UUID.randomUUID()}_${imageUri.lastPathSegment ?: "image"}"
         val imageRef = storageFolder.child(fileName)
@@ -96,8 +186,10 @@ class ChatViewModel : ViewModel() {
                 val imageMessage = Message(
                     id = docRef.id,
                     sender = sender,
-                    receiver = receiver,
-                    text = caption,
+                    receiver = receiver ?: "",
+                    groupId = groupId,
+                    participants = participants,
+                    text = MessageCipher.encrypt(caption),
                     imageUrl = downloadUri.toString(),
                     type = MessageType.IMAGE,
                     timestamp = System.currentTimeMillis()
@@ -115,8 +207,23 @@ class ChatViewModel : ViewModel() {
             }
     }
 
+    private fun normalizeMessage(message: Message): Message {
+        val participants = if (message.participants.isNotEmpty()) {
+            message.participants
+        } else {
+            listOfNotNull(
+                message.sender.takeIf { it.isNotBlank() },
+                message.receiver.takeIf { it.isNotBlank() }
+            )
+        }
+        return message.copy(
+            text = MessageCipher.decrypt(message.text),
+            participants = participants.distinct()
+        )
+    }
+
     override fun onCleared() {
-        sentReg?.remove(); recvReg?.remove()
+        sentReg?.remove(); recvReg?.remove(); groupReg?.remove()
         super.onCleared()
     }
 }
