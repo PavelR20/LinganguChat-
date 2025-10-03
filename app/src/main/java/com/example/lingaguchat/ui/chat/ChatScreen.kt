@@ -1,5 +1,6 @@
 package com.example.lingaguchat.ui.chat
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,18 +38,14 @@ fun ChatScreen(
 ) {
     val messages by chatViewModel.messages.collectAsState()
     var text by remember { mutableStateOf("") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var isSendingImage by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let {
-            chatViewModel.sendImageMessage(currentUserEmail, selectedUserEmail, it) { success ->
-                if (!success) {
-                    Toast.makeText(context, "No se pudo enviar la imagen", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        selectedImageUri = uri
     }
 
     // nombres para UI
@@ -150,24 +149,127 @@ fun ChatScreen(
             }
         }
 
-        Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
-
+        selectedImageUri?.let { imageUri ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                tonalElevation = 4.dp,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Box {
+                    AsyncImage(
+                        model = imageUri,
+                        contentDescription = "Imagen a enviar",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    IconButton(
+                        onClick = { selectedImageUri = null },
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Quitar imagen"
+                        )
+                    }
+                }
             }
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = "Seleccionar imagen"
+                )
+            }
+            Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(8.dp)
-            )
-            Button(onClick = {
-                if (text.isNotBlank()) {
-                    chatViewModel.sendMessage(currentUserEmail, selectedUserEmail, text)
-                    text = ""
+                    .padding(horizontal = 8.dp),
+                shape = RoundedCornerShape(24.dp),
+                tonalElevation = 2.dp
+            ) {
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                                .fillMaxWidth()
+                        ) {
+                            if (text.isBlank()) {
+                                Text(
+                                    text = "Escribe un mensaje...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+            }
+            Button(
+                onClick = {
+                    val trimmedText = text.trim()
+                    val imageUri = selectedImageUri
+                    when {
+                        imageUri != null -> {
+                            isSendingImage = true
+                            chatViewModel.sendImageMessage(
+                                sender = currentUserEmail,
+                                receiver = selectedUserEmail,
+                                imageUri = imageUri,
+                                caption = trimmedText
+                            ) { success ->
+                                isSendingImage = false
+                                if (success) {
+                                    text = ""
+                                    selectedImageUri = null
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo enviar la imagen",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+
+                        trimmedText.isNotBlank() -> {
+                            chatViewModel.sendMessage(
+                                currentUserEmail,
+                                selectedUserEmail,
+                                trimmedText
+                            )
+                            text = ""
+                        }
+                    }
+                },
+                enabled = !isSendingImage && (text.isNotBlank() || selectedImageUri != null)
+            ) {
+                if (isSendingImage) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Enviar")
                 }
-            }) {
-                Text("Enviar")
             }
         }
     }
