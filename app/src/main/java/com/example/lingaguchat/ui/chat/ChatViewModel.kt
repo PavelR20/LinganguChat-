@@ -1,14 +1,18 @@
 // ChatViewModel.kt
 package com.example.lingaguchat.ui.chat
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.UUID
 
 class ChatViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
+    private val storage = FirebaseStorage.getInstance()
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages
@@ -61,9 +65,50 @@ class ChatViewModel : ViewModel() {
             sender = sender,
             receiver = receiver,
             text = text,
+            type = MessageType.TEXT,
             timestamp = System.currentTimeMillis()
         )
         docRef.set(newMessage)
+    }
+
+    fun sendImageMessage(
+        sender: String,
+        receiver: String,
+        imageUri: Uri,
+        onResult: (Boolean) -> Unit = {}
+    ) {
+        val imageRef = storage.reference
+            .child("chat_images/${UUID.randomUUID()}_${imageUri.lastPathSegment ?: "image"}")
+
+        imageRef.putFile(imageUri)
+            .continueWithTask { task ->
+                if (!task.isSuccessful) {
+                    task.exception?.let { throw it }
+                }
+                imageRef.downloadUrl
+            }
+            .addOnSuccessListener { downloadUri ->
+                val docRef = db.collection("messages").document()
+                val imageMessage = Message(
+                    id = docRef.id,
+                    sender = sender,
+                    receiver = receiver,
+                    text = "",
+                    imageUrl = downloadUri.toString(),
+                    type = MessageType.IMAGE,
+                    timestamp = System.currentTimeMillis()
+                )
+                docRef.set(imageMessage)
+                    .addOnSuccessListener { onResult(true) }
+                    .addOnFailureListener {
+                        println("🔥 image message send error: ${it.message}")
+                        onResult(false)
+                    }
+            }
+            .addOnFailureListener {
+                println("🔥 image upload error: ${it.message}")
+                onResult(false)
+            }
     }
 
     override fun onCleared() {
