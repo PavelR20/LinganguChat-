@@ -1,10 +1,15 @@
 package com.example.lingaguchat.ui.chat
 
-sealed class ChatDestination {
-    data class Private(val email: String) : ChatDestination()
+sealed class ChatDestination(open val chatId: String, open val members: List<String>) {
+    data class Direct(
+        override val chatId: String,
+        val peerEmail: String,
+        override val members: List<String>
+    ) : ChatDestination(chatId, members)
+
     data class Group(
-        val id: String,
+        override val chatId: String,
         val name: String,
-        val members: List<String>
-    ) : ChatDestination()
+        override val members: List<String>
+    ) : ChatDestination(chatId, members)
 }
