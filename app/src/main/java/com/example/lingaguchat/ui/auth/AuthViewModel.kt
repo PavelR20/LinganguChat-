@@ -46,7 +46,10 @@ class AuthViewModel : ViewModel() {
         super.onCleared()
     }
 
-    /** Crea el doc en /users/{email} si no existe. Usa 'name' si se provee; si no, toma prefijo del email. */
+    /**
+     * Garantiza que exista un documento en /users/{email}.
+     * Si ya existe pero le faltan campos esenciales, los completa.
+     */
     private fun ensureUserDoc(email: String, name: String? = null) {
         val db = FirebaseFirestore.getInstance()
         val users = db.collection("users")
@@ -55,7 +58,21 @@ class AuthViewModel : ViewModel() {
         docRef.get()
             .addOnSuccessListener { snap ->
                 if (snap.exists()) {
-                    println("✅ users/$email ya existe")
+                    val data = snap.data ?: emptyMap<String, Any>()
+                    val needsUpdate = !data.containsKey("email") || !data.containsKey("name")
+
+                    if (needsUpdate) {
+                        val finalName = (name ?: email.substringBefore("@")).trim()
+                        val payload = mapOf(
+                            "email" to email.trim(),
+                            "name" to finalName,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                        docRef.set(payload, SetOptions.merge())
+                        println("⚙️ Actualizado users/$email con campos faltantes.")
+                    } else {
+                        println("✅ users/$email ya existe y está completo")
+                    }
                 } else {
                     val finalName = (name ?: email.substringBefore("@")).trim()
                     val payload = mapOf(
@@ -74,7 +91,7 @@ class AuthViewModel : ViewModel() {
                 }
             }
             .addOnFailureListener { e ->
-                // Si falló el get (reglas/permiso), intentamos set directo para forzar creación
+                // Si falló el get (por reglas, permisos o latencia), forzamos creación
                 val finalName = (name ?: email.substringBefore("@")).trim()
                 val payload = mapOf(
                     "email" to email.trim(),
@@ -104,7 +121,6 @@ class AuthViewModel : ViewModel() {
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val current = auth.currentUser?.email ?: email.trim()
-                    // Garantizar doc para cuentas “viejas”
                     ensureUserDoc(current)
                 } else {
                     updateState {
@@ -138,7 +154,6 @@ class AuthViewModel : ViewModel() {
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val current = auth.currentUser?.email ?: email.trim()
-                    // Crear doc con el nombre elegido
                     ensureUserDoc(current, username)
                 } else {
                     updateState {

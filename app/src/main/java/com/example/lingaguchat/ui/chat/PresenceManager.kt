@@ -1,5 +1,6 @@
 package com.example.lingaguchat.ui.chat
 
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 
@@ -9,7 +10,7 @@ object PresenceManager {
     fun setOnline(email: String) {
         val payload = mapOf(
             "online" to true,
-            "lastSeen" to System.currentTimeMillis()
+            "lastSeen" to FieldValue.serverTimestamp()
         )
         usersCollection.document(email).set(payload, SetOptions.merge())
     }
@@ -17,7 +18,7 @@ object PresenceManager {
     fun setOffline(email: String) {
         val payload = mapOf(
             "online" to false,
-            "lastSeen" to System.currentTimeMillis()
+            "lastSeen" to FieldValue.serverTimestamp()
         )
         usersCollection.document(email).set(payload, SetOptions.merge())
     }
