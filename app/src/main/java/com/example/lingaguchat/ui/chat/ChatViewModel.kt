@@ -1,4 +1,3 @@
-// ChatViewModel.kt
 package com.example.lingaguchat.ui.chat
 
 import android.net.Uri
@@ -8,6 +7,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.google.firebase.firestore.FieldValue
 import java.util.UUID
 
 class ChatViewModel : ViewModel() {
@@ -23,11 +23,18 @@ class ChatViewModel : ViewModel() {
     private var sentReg: ListenerRegistration? = null
     private var recvReg: ListenerRegistration? = null
     private var groupReg: ListenerRegistration? = null
+
     private var sentList: List<Message> = emptyList()
     private var recvList: List<Message> = emptyList()
 
+    // ---------------------------
+    // LECTURA: PRIVADOS (2 queries)
+    // ---------------------------
     fun listenPrivateMessages(currentUser: String, otherUser: String) {
+        // Limpia listeners de grupo
         groupReg?.remove(); groupReg = null
+
+        // Reinicia estado
         sentReg?.remove(); recvReg?.remove()
         sentList = emptyList(); recvList = emptyList()
         _messages.value = emptyList()
@@ -61,7 +68,11 @@ class ChatViewModel : ViewModel() {
             }
     }
 
+    // ---------------------------
+    // LECTURA: GRUPOS (1 query ordenada por serverTime)
+    // ---------------------------
     fun listenGroupMessages(groupId: String) {
+        // Limpia listeners de privados
         sentReg?.remove(); recvReg?.remove()
         sentReg = null; recvReg = null
         sentList = emptyList(); recvList = emptyList()
@@ -70,6 +81,7 @@ class ChatViewModel : ViewModel() {
         groupReg?.remove()
         groupReg = messagesCollection
             .whereEqualTo("groupId", groupId)
+            .orderBy("serverTime") // entrega ya ordenado por servidor
             .addSnapshotListener { snap, e ->
                 if (e != null) {
                     println("🔥 group query error: ${e.message}")
@@ -78,16 +90,28 @@ class ChatViewModel : ViewModel() {
                 val groupMessages = snap?.toObjects(Message::class.java)
                     ?.map(::normalizeMessage)
                     .orEmpty()
-                _messages.value = groupMessages.sortedBy { it.timestamp }
+
+                // Fallback adicional por si alguno no tiene serverTime aún
+                _messages.value = groupMessages.sortedWith(
+                    compareBy<Message> { it.serverTime?.toDate()?.time ?: it.timestamp }
+                        .thenBy { it.id } // desempate estable
+                )
             }
     }
 
+    // Combina y ordena privados por tiempo de servidor (fallback a timestamp)
     private fun publishMerged() {
         _messages.value = (sentList + recvList)
             .distinctBy { it.id }
-            .sortedBy { it.timestamp }
+            .sortedWith(
+                compareBy<Message> { it.serverTime?.toDate()?.time ?: it.timestamp }
+                    .thenBy { it.id }
+            )
     }
 
+    // ---------------------------
+    // ENVÍO: TEXTO DIRECTO
+    // ---------------------------
     fun sendDirectMessage(sender: String, receiver: String, text: String) {
         if (text.isBlank()) return
         val docRef = messagesCollection.document()
@@ -99,11 +123,17 @@ class ChatViewModel : ViewModel() {
             participants = listOf(sender, receiver).distinct(),
             text = MessageCipher.encrypt(text),
             type = MessageType.TEXT,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            serverTime = null // lo rellenará el servidor
         )
         docRef.set(newMessage)
+            .continueWithTask { docRef.update("serverTime", FieldValue.serverTimestamp()) }
+            .addOnFailureListener { println("🔥 sendDirectMessage error: ${it.message}") }
     }
 
+    // ---------------------------
+    // ENVÍO: TEXTO A GRUPO
+    // ---------------------------
     fun sendGroupMessage(
         sender: String,
         groupId: String,
@@ -120,11 +150,17 @@ class ChatViewModel : ViewModel() {
             participants = (participants + sender).distinct(),
             text = MessageCipher.encrypt(text),
             type = MessageType.TEXT,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            serverTime = null
         )
         docRef.set(message)
+            .continueWithTask { docRef.update("serverTime", FieldValue.serverTimestamp()) }
+            .addOnFailureListener { println("🔥 sendGroupMessage error: ${it.message}") }
     }
 
+    // ---------------------------
+    // ENVÍO: IMAGEN DIRECTO/GRUPO
+    // ---------------------------
     fun sendDirectImageMessage(
         sender: String,
         receiver: String,
@@ -176,9 +212,7 @@ class ChatViewModel : ViewModel() {
 
         imageRef.putFile(imageUri)
             .continueWithTask { task ->
-                if (!task.isSuccessful) {
-                    task.exception?.let { throw it }
-                }
+                if (!task.isSuccessful) task.exception?.let { throw it }
                 imageRef.downloadUrl
             }
             .addOnSuccessListener { downloadUri ->
@@ -192,9 +226,11 @@ class ChatViewModel : ViewModel() {
                     text = MessageCipher.encrypt(caption),
                     imageUrl = downloadUri.toString(),
                     type = MessageType.IMAGE,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    serverTime = null
                 )
                 docRef.set(imageMessage)
+                    .continueWithTask { docRef.update("serverTime", FieldValue.serverTimestamp()) }
                     .addOnSuccessListener { onResult(true) }
                     .addOnFailureListener {
                         println("🔥 image message send error: ${it.message}")
@@ -207,6 +243,9 @@ class ChatViewModel : ViewModel() {
             }
     }
 
+    // ---------------------------
+    // Normalización + desencriptado
+    // ---------------------------
     private fun normalizeMessage(message: Message): Message {
         val participants = if (message.participants.isNotEmpty()) {
             message.participants

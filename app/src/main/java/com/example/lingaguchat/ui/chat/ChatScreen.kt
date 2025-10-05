@@ -54,9 +54,7 @@ fun ChatScreen(
     val context = LocalContext.current
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        selectedImageUri = uri
-    }
+    ) { uri -> selectedImageUri = uri }
 
     val db = remember { FirebaseFirestore.getInstance() }
 
@@ -112,9 +110,7 @@ fun ChatScreen(
                         if (snapshot != null && snapshot.exists()) {
                             title = snapshot.getString("name") ?: destination.name
                             val members = snapshot.get("members") as? List<String>
-                            if (!members.isNullOrEmpty()) {
-                                groupMembers = members
-                            }
+                            if (!members.isNullOrEmpty()) groupMembers = members
                         }
                     }
 
@@ -171,8 +167,14 @@ fun ChatScreen(
             items(items = messages, key = { it.id }) { msg ->
                 val isMe = msg.sender == currentUserEmail
                 val who = memberNames[msg.sender] ?: msg.sender.substringBefore("@")
-                val timeText = DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
-                    .format(Date(msg.timestamp))
+
+                // Usa tiempo del servidor (fallback al local) y muestra con segundos
+                val effectiveTs = msg.serverTime?.toDate()?.time ?: msg.timestamp
+                val timeText = SimpleDateFormat(
+                    if (isSameDay(effectiveTs, System.currentTimeMillis()))
+                        "HH:mm:ss" else "dd MMM yyyy HH:mm:ss",
+                    Locale.getDefault()
+                ).format(Date(effectiveTs))
 
                 MessageBubble(
                     name = who,
@@ -223,10 +225,7 @@ fun ChatScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
-                Icon(
-                    imageVector = Icons.Default.Image,
-                    contentDescription = "Seleccionar imagen"
-                )
+                Icon(imageVector = Icons.Default.Image, contentDescription = "Seleccionar imagen")
             }
             Surface(
                 modifier = Modifier
@@ -238,8 +237,7 @@ fun ChatScreen(
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
-                    modifier = Modifier
-                        .fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth(),
                     decorationBox = { innerTextField ->
                         Box(
                             modifier = Modifier
@@ -258,6 +256,7 @@ fun ChatScreen(
                     }
                 )
             }
+
             val sendEnabled = !isSendingImage && (text.isNotBlank() || selectedImageUri != null)
             Button(
                 onClick = {
@@ -310,7 +309,6 @@ fun ChatScreen(
                                 }
                             }
                         }
-
                         trimmedText.isNotBlank() -> {
                             when (destination) {
                                 is ChatDestination.Private -> chatViewModel.sendDirectMessage(
@@ -359,7 +357,7 @@ private fun isSameDay(time1: Long, time2: Long): Boolean {
     val cal1 = Calendar.getInstance().apply { timeInMillis = time1 }
     val cal2 = Calendar.getInstance().apply { timeInMillis = time2 }
     return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
-        cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+            cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
 }
 
 @Composable
@@ -413,7 +411,6 @@ private fun MessageBubble(
                         }
                     }
                 }
-
                 MessageType.TEXT -> {
                     Text(
                         text = message.text,
