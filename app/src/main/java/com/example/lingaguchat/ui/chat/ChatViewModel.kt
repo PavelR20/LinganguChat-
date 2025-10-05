@@ -138,6 +138,7 @@ class ChatViewModel : ViewModel() {
             messageRef.set(payload).await()
             chatRef.set(
                 mapOf(
+                    "id" to chatId,
                     "lastMessage" to trimmed,
                     "lastMessageSender" to sender,
                     "lastMessageType" to MessageType.TEXT.name.lowercase(),
@@ -177,6 +178,7 @@ class ChatViewModel : ViewModel() {
             val preview = if (captionText.isNotEmpty()) captionText else "📷 Imagen"
             chatRef.set(
                 mapOf(
+                    "id" to chatId,
                     "lastMessage" to preview,
                     "lastMessageSender" to sender,
                     "lastMessageType" to MessageType.IMAGE.name.lowercase(),
