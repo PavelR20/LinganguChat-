@@ -59,7 +59,7 @@ class ChatViewModel : ViewModel() {
         val query = messagesRef
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .orderBy("localTimestamp", Query.Direction.ASCENDING)
-            .limitToLast(pageSize.toInt())
+            .limitToLast(pageSize.toInt().toLong())
 
         messagesListener = query.addSnapshotListener { snapshot, error ->
             if (error != null) {
@@ -104,7 +104,7 @@ class ChatViewModel : ViewModel() {
                 .orderBy("timestamp", Query.Direction.ASCENDING)
                 .orderBy("localTimestamp", Query.Direction.ASCENDING)
                 .endBefore(anchor)
-                .limitToLast(pageSize.toInt())
+                .limitToLast(pageSize.toInt().toLong())
             val snapshot = query.get().await()
             if (snapshot.isEmpty) {
                 _hasMore.value = false
