@@ -10,9 +10,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.lingaguchat.MainActivity
 import com.example.lingaguchat.R
-import com.example.lingaguchat.ui.chat.Message
 import com.example.lingaguchat.ui.chat.MessageCipher
-import com.example.lingaguchat.ui.chat.MessageType
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.google.firebase.firestore.FirebaseFirestore
@@ -29,30 +27,34 @@ class AppMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         val data = remoteMessage.data
         val messageId = data["messageId"] ?: return
-        val destType = data["destType"] // "private" | "group"
-        val peer = data["peer"]        // email del otro o groupId
+        val chatId = data["chatId"] ?: return
+        val destType = data["destType"] ?: "private"
+        val peer = data["peer"] ?: return
 
-        // Leemos el mensaje para desencriptar y mostrar preview real
         FirebaseFirestore.getInstance()
+            .collection("chats")
+            .document(chatId)
             .collection("messages")
             .document(messageId)
             .get()
             .addOnSuccessListener { snap ->
-                val msg = snap.toObject(Message::class.java) ?: return@addOnSuccessListener
+                if (!snap.exists()) return@addOnSuccessListener
+                val encryptedText = snap.getString("text").orEmpty()
+                val imageUrl = snap.getString("imageUrl")
+                val decrypted = MessageCipher.decrypt(encryptedText).trim()
+
                 val title = when (destType) {
                     "group" -> data["groupName"] ?: "Nuevo mensaje"
-                    else -> data["senderName"] ?: (msg.sender.substringBefore("@"))
+                    else -> data["senderName"] ?: peer.substringBefore("@")
                 }
 
-                val preview = when (msg.type) {
-                    MessageType.IMAGE -> {
-                        val caption = MessageCipher.decrypt(msg.text).trim()
-                        if (caption.isNotEmpty()) "📷 $caption" else "📷 Imagen"
-                    }
-                    MessageType.TEXT -> MessageCipher.decrypt(msg.text)
-                }.ifBlank { "Nuevo mensaje" }
+                val preview = if (!imageUrl.isNullOrBlank()) {
+                    if (decrypted.isNotEmpty()) "📷 $decrypted" else "📷 Imagen"
+                } else {
+                    decrypted.ifBlank { "Nuevo mensaje" }
+                }
 
-                showNotification(title, preview, destType ?: "private", peer ?: "", messageId)
+                showNotification(title, preview, destType, peer, chatId, messageId)
             }
     }
 
@@ -61,6 +63,7 @@ class AppMessagingService : FirebaseMessagingService() {
         body: String,
         destType: String,
         peer: String,
+        chatId: String,
         messageId: String
     ) {
         createChannelIfNeeded()
@@ -70,6 +73,7 @@ class AppMessagingService : FirebaseMessagingService() {
             putExtra("openFromNotification", true)
             putExtra("destType", destType) // "private" | "group"
             putExtra("peer", peer)         // email o groupId
+            putExtra("chatId", chatId)
             putExtra("messageId", messageId)
         }
 

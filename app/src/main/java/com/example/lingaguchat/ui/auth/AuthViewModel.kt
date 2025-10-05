@@ -4,7 +4,9 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 
 data class AuthUiState(
     val isLoading: Boolean = false,
@@ -56,8 +58,13 @@ class AuthViewModel : ViewModel() {
                     println("✅ users/$email ya existe")
                 } else {
                     val finalName = (name ?: email.substringBefore("@")).trim()
-                    val payload = mapOf("email" to email.trim(), "name" to finalName)
-                    docRef.set(payload)
+                    val payload = mapOf(
+                        "email" to email.trim(),
+                        "name" to finalName,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    docRef.set(payload, SetOptions.merge())
                         .addOnSuccessListener {
                             println("✅ Creado users/$email con name='$finalName'")
                         }
@@ -69,7 +76,13 @@ class AuthViewModel : ViewModel() {
             .addOnFailureListener { e ->
                 // Si falló el get (reglas/permiso), intentamos set directo para forzar creación
                 val finalName = (name ?: email.substringBefore("@")).trim()
-                docRef.set(mapOf("email" to email.trim(), "name" to finalName))
+                val payload = mapOf(
+                    "email" to email.trim(),
+                    "name" to finalName,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                docRef.set(payload, SetOptions.merge())
                     .addOnSuccessListener {
                         println("✅ Creado (fallback) users/$email con name='$finalName'")
                     }

@@ -16,41 +16,34 @@ const unique=<T>(arr:T[])=>{
 };
 
 /**
- * Envía notificaciones cuando se crea /messages/{messageId}
- * (Firebase Functions v2).
+ * Envía notificaciones cuando se crea chats/{chatId}/messages/{messageId}.
  */
 export const sendMessageNotification=onDocumentCreated(
-  "messages/{messageId}",
+  "chats/{chatId}/messages/{messageId}",
   async (event)=>{
     const messageId:string=event.params.messageId;
+    const chatId:string=event.params.chatId;
     const snap=event.data;
     if (!snap) return;
 
-    const msg=snap.data() as {
+    const messageData=snap.data() as {
       sender?:string;
-      receiver?:string;
-      groupId?:string|null;
-      participants?:string[];
     };
-
-    const sender=(msg.sender||"").trim();
-    const isGroup=!!msg.groupId&&String(msg.groupId).trim().length>0;
-
-    let targets:string[]=[];
-    if (isGroup) {
-      const parts=Array.isArray(msg.participants)?msg.participants:[];
-      targets=parts.filter((e)=>e&&e!==sender);
-    } else {
-      const receiver=(msg.receiver||"").trim();
-      if (receiver&&receiver!==sender) targets=[receiver];
-    }
-    if (targets.length===0) return;
+    const sender=(messageData.sender||"").trim();
+    if (!sender) return;
 
     const db=admin.firestore();
+    const chatDoc=await db.collection("chats").doc(chatId).get();
+    if (!chatDoc.exists) return;
+
+    const chat=chatDoc.data()||{};
+    const type=((chat.type as string)||"direct").toLowerCase();
+    const members:string[]=Array.isArray(chat.members)?chat.members:[];
+    const targets=members.filter((email)=>email&&email!==sender);
+    if (targets.length===0) return;
+
     const usersCol=db.collection("users");
-    const userDocs=await Promise.all(
-      targets.map((email)=>usersCol.doc(email).get())
-    );
+    const userDocs=await Promise.all(targets.map((email)=>usersCol.doc(email).get()));
 
     const tokens:string[]=[];
     for (const doc of userDocs) {
@@ -61,26 +54,28 @@ export const sendMessageNotification=onDocumentCreated(
     const uniqueTokens=unique(tokens);
     if (uniqueTokens.length===0) return;
 
-    const senderName=sender.split("@")[0]||"Remitente";
+    let senderName=sender.split("@")[0]||"Remitente";
+    try {
+      const senderDoc=await usersCol.doc(sender).get();
+      const name=senderDoc.get("name") as string|undefined;
+      if (name) senderName=name;
+    } catch {
+      // omitimos errores de lectura del remitente
+    }
+
     const data:{[k:string]:string}={
       messageId,
-      destType: isGroup?"group":"private",
+      chatId,
+      destType: type==="group"?"group":"private",
       sender,
       senderName,
     };
 
-    if (isGroup) {
-      const groupId=String(msg.groupId);
-      data["peer"]=groupId;
-      try {
-        const gdoc=await db.collection("groups").doc(groupId).get();
-        const groupName=(gdoc.exists&&(gdoc.get("name") as string))||"Grupo";
-        data["groupName"]=groupName;
-      } catch {
-        // sin nombre de grupo si falla
-      }
+    if (type==="group") {
+      data["peer"]=chatId;
+      const groupName=(chat.name as string)||"Grupo";
+      data["groupName"]=groupName;
     } else {
-      // En privados, el receptor debe abrir chat con el remitente
       data["peer"]=sender;
     }
 
