@@ -97,7 +97,6 @@ class ChatsViewModel : ViewModel() {
             val snapshot = chatRef.get().await()
             if (!snapshot.exists()) {
                 val payload = mapOf(
-                    "id" to chatId,
                     "type" to ChatType.DIRECT.name.lowercase(Locale.ROOT),
                     "members" to orderedMembers,
                     "directKey" to key,
@@ -114,13 +113,7 @@ class ChatsViewModel : ViewModel() {
                 val existingLower = existingMemberStrings.map { it.lowercase(Locale.ROOT) }
                 val expectedLower = orderedMembers.map { it.lowercase(Locale.ROOT) }
                 if (existingLower != expectedLower || existingMemberStrings != orderedMembers) {
-                    chatRef.set(
-                        mapOf(
-                            "id" to chatId,
-                            "members" to orderedMembers
-                        ),
-                        SetOptions.merge()
-                    ).await()
+                    chatRef.set(mapOf("members" to orderedMembers), SetOptions.merge()).await()
                 }
             }
             chatRef.get().await().toChatSummary()
@@ -150,7 +143,6 @@ class ChatsViewModel : ViewModel() {
         return try {
             val chatRef = chatsCollection.document()
             val payload = mapOf(
-                "id" to chatRef.id,
                 "type" to ChatType.GROUP.name.lowercase(Locale.ROOT),
                 "name" to trimmedName,
                 "members" to distinctMembers,
@@ -202,9 +194,8 @@ class ChatsViewModel : ViewModel() {
             "text" -> MessageType.TEXT
             else -> null
         }
-        val chatId = getString("id")?.takeIf { it.isNotBlank() } ?: id
         return ChatSummary(
-            id = chatId,
+            id = id,
             type = chatType,
             name = getString("name"),
             members = members,
