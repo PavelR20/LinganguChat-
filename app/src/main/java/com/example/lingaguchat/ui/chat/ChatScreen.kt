@@ -1,5 +1,6 @@
 package com.example.lingaguchat.ui.chat
 
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,9 +53,48 @@ fun ChatScreen(
     }
 
     val context = LocalContext.current
+    val releasePersistedUri = remember(context) {
+        { uri: Uri? ->
+            if (uri != null) {
+                runCatching {
+                    context.contentResolver.releasePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            }
+        }
+    }
+
+    val currentSelectedUri by rememberUpdatedState(selectedImageUri)
+    DisposableEffect(Unit) {
+        onDispose { releasePersistedUri(currentSelectedUri) }
+    }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri -> selectedImageUri = uri }
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            if (uri != selectedImageUri) {
+                releasePersistedUri(selectedImageUri)
+            }
+            selectedImageUri = uri
+        }
+    }
+
+    LaunchedEffect(destination) {
+        if (selectedImageUri != null) {
+            releasePersistedUri(selectedImageUri)
+            selectedImageUri = null
+        }
+        text = ""
+    }
 
     val db = remember { FirebaseFirestore.getInstance() }
 
@@ -205,7 +245,10 @@ fun ChatScreen(
                             contentScale = ContentScale.Crop
                         )
                         IconButton(
-                            onClick = { selectedImageUri = null },
+                            onClick = {
+                                releasePersistedUri(selectedImageUri)
+                                selectedImageUri = null
+                            },
                             modifier = Modifier.align(Alignment.TopEnd)
                         ) {
                             Icon(
@@ -224,7 +267,7 @@ fun ChatScreen(
                 .padding(horizontal = 8.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
+            IconButton(onClick = { imagePickerLauncher.launch(arrayOf("image/*")) }) {
                 Icon(imageVector = Icons.Default.Image, contentDescription = "Seleccionar imagen")
             }
             Surface(
@@ -277,6 +320,7 @@ fun ChatScreen(
                                         isSendingImage = false
                                         if (success) {
                                             text = ""
+                                            releasePersistedUri(selectedImageUri)
                                             selectedImageUri = null
                                         } else {
                                             Toast.makeText(
@@ -299,6 +343,7 @@ fun ChatScreen(
                                         isSendingImage = false
                                         if (success) {
                                             text = ""
+                                            releasePersistedUri(selectedImageUri)
                                             selectedImageUri = null
                                         } else {
                                             Toast.makeText(
