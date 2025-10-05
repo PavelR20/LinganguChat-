@@ -270,6 +270,7 @@ fun ChatScreen(
                                     chatViewModel.sendDirectImageMessage(
                                         sender = currentUserEmail,
                                         receiver = destination.email,
+                                        contentResolver = context.contentResolver,
                                         imageUri = imageUri,
                                         caption = trimmedText
                                     ) { success ->
@@ -291,6 +292,7 @@ fun ChatScreen(
                                         sender = currentUserEmail,
                                         groupId = destination.id,
                                         participants = groupMembers,
+                                        contentResolver = context.contentResolver,
                                         imageUri = imageUri,
                                         caption = trimmedText
                                     ) { success ->

@@ -1,10 +1,13 @@
 package com.example.lingaguchat.ui.chat
 
+import android.content.ContentResolver
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
+import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.google.firebase.firestore.FieldValue
@@ -164,6 +167,7 @@ class ChatViewModel : ViewModel() {
     fun sendDirectImageMessage(
         sender: String,
         receiver: String,
+        contentResolver: ContentResolver,
         imageUri: Uri,
         caption: String = "",
         onResult: (Boolean) -> Unit = {},
@@ -173,6 +177,7 @@ class ChatViewModel : ViewModel() {
             receiver = receiver,
             groupId = null,
             participants = listOf(sender, receiver).distinct(),
+            contentResolver = contentResolver,
             imageUri = imageUri,
             caption = caption,
             onResult = onResult
@@ -183,6 +188,7 @@ class ChatViewModel : ViewModel() {
         sender: String,
         groupId: String,
         participants: List<String>,
+        contentResolver: ContentResolver,
         imageUri: Uri,
         caption: String = "",
         onResult: (Boolean) -> Unit = {},
@@ -192,6 +198,7 @@ class ChatViewModel : ViewModel() {
             receiver = "",
             groupId = groupId,
             participants = (participants + sender).distinct(),
+            contentResolver = contentResolver,
             imageUri = imageUri,
             caption = caption,
             onResult = onResult
@@ -203,14 +210,39 @@ class ChatViewModel : ViewModel() {
         receiver: String?,
         groupId: String?,
         participants: List<String>,
+        contentResolver: ContentResolver,
         imageUri: Uri,
         caption: String,
         onResult: (Boolean) -> Unit
     ) {
-        val fileName = "${UUID.randomUUID()}_${imageUri.lastPathSegment ?: "image"}"
+        val originalName = imageUri.lastPathSegment?.substringAfterLast('/') ?: "image"
+        val safeName = originalName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val fileName = "${UUID.randomUUID()}_${safeName.ifBlank { "image" }}"
         val imageRef = storageFolder.child(fileName)
 
-        imageRef.putFile(imageUri)
+        val mimeType = contentResolver.getType(imageUri) ?: "image/jpeg"
+        val inputStream = runCatching { contentResolver.openInputStream(imageUri) }
+            .getOrNull()
+
+        if (inputStream == null) {
+            println("🔥 image input stream null for uri: $imageUri")
+            onResult(false)
+            return
+        }
+
+        val metadata = StorageMetadata.Builder()
+            .setContentType(mimeType)
+            .build()
+
+        val uploadTask = imageRef.putStream(inputStream, metadata)
+        uploadTask.addOnCompleteListener {
+            try {
+                inputStream.close()
+            } catch (_: IOException) {
+            }
+        }
+
+        uploadTask
             .continueWithTask { task ->
                 if (!task.isSuccessful) task.exception?.let { throw it }
                 imageRef.downloadUrl
