@@ -87,21 +87,34 @@ class ChatsViewModel : ViewModel() {
         val normalizedCurrent = currentUser.trim()
         val normalizedOther = otherUser.trim()
         require(normalizedCurrent.isNotBlank() && normalizedOther.isNotBlank())
+        val orderedMembers = listOf(normalizedCurrent, normalizedOther)
+            .map { it.trim() }
+            .sortedBy { it.lowercase(Locale.ROOT) }
         return try {
             val key = buildDirectKey(normalizedCurrent, normalizedOther)
             val chatId = buildDirectChatId(key)
             val chatRef = chatsCollection.document(chatId)
             val snapshot = chatRef.get().await()
             if (!snapshot.exists()) {
-                val members = key.split("|")
                 val payload = mapOf(
                     "type" to ChatType.DIRECT.name.lowercase(Locale.ROOT),
-                    "members" to members,
+                    "members" to orderedMembers,
                     "directKey" to key,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "lastTimestamp" to FieldValue.serverTimestamp()
                 )
                 chatRef.set(payload, SetOptions.merge()).await()
+            } else {
+                val existingMembers = snapshot.get("members") as? List<*>
+                val existingMemberStrings = existingMembers
+                    ?.mapNotNull { it as? String }
+                    ?.map { it.trim() }
+                    ?: emptyList()
+                val existingLower = existingMemberStrings.map { it.lowercase(Locale.ROOT) }
+                val expectedLower = orderedMembers.map { it.lowercase(Locale.ROOT) }
+                if (existingLower != expectedLower || existingMemberStrings != orderedMembers) {
+                    chatRef.set(mapOf("members" to orderedMembers), SetOptions.merge()).await()
+                }
             }
             chatRef.get().await().toChatSummary()
         } catch (e: Exception) {
@@ -172,7 +185,9 @@ class ChatsViewModel : ViewModel() {
             "group" -> ChatType.GROUP
             else -> ChatType.DIRECT
         }
-        val members = get("members") as? List<String> ?: emptyList()
+        val members = (get("members") as? List<*>)
+            ?.mapNotNull { (it as? String)?.trim() }
+            ?: emptyList()
         val lastTypeRaw = getString("lastMessageType")?.lowercase(Locale.ROOT)
         val lastType = when (lastTypeRaw) {
             "image" -> MessageType.IMAGE
