@@ -3,10 +3,12 @@ package com.example.lingaguchat.ui.auth
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import com.example.lingaguchat.push.FcmTokenManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.messaging.FirebaseMessaging
 
 data class AuthUiState(
     val isLoading: Boolean = false,
@@ -73,6 +75,7 @@ class AuthViewModel : ViewModel() {
                     } else {
                         println("✅ users/$email ya existe y está completo")
                     }
+                    ensureMessagingToken(email)
                 } else {
                     val finalName = (name ?: email.substringBefore("@")).trim()
                     val payload = mapOf(
@@ -84,6 +87,7 @@ class AuthViewModel : ViewModel() {
                     docRef.set(payload, SetOptions.merge())
                         .addOnSuccessListener {
                             println("✅ Creado users/$email con name='$finalName'")
+                            ensureMessagingToken(email)
                         }
                         .addOnFailureListener { e ->
                             println("❌ Error creando users/$email: ${e.message}")
@@ -102,10 +106,24 @@ class AuthViewModel : ViewModel() {
                 docRef.set(payload, SetOptions.merge())
                     .addOnSuccessListener {
                         println("✅ Creado (fallback) users/$email con name='$finalName'")
+                        ensureMessagingToken(email)
                     }
                     .addOnFailureListener { e2 ->
                         println("❌ Error (fallback) users/$email: ${e.message} / ${e2.message}")
                     }
+            }
+    }
+
+    private fun ensureMessagingToken(email: String) {
+        FirebaseMessaging.getInstance().token
+            .addOnCompleteListener { task ->
+                if (!task.isSuccessful) {
+                    println("⚠️ No se pudo obtener token FCM: ${task.exception?.message}")
+                    return@addOnCompleteListener
+                }
+                val token = task.result?.trim().orEmpty()
+                if (token.isBlank()) return@addOnCompleteListener
+                FcmTokenManager.storeToken(email, token)
             }
     }
 

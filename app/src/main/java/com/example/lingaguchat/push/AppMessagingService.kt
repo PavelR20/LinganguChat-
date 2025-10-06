@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import com.example.lingaguchat.MainActivity
 import com.example.lingaguchat.R
 import com.example.lingaguchat.ui.chat.MessageCipher
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.google.firebase.firestore.FirebaseFirestore
@@ -20,8 +21,9 @@ class AppMessagingService : FirebaseMessagingService() {
     private val CHANNEL_ID = "messages_channel_id"
 
     override fun onNewToken(token: String) {
-        // El AuthViewModel ya sube token, pero aquí puedes hacer un “best-effort”
-        // si quisieras (obtener email actual y subirlo).
+        super.onNewToken(token)
+        val email = FirebaseAuth.getInstance().currentUser?.email ?: return
+        FcmTokenManager.storeToken(email, token)
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -84,11 +86,13 @@ class AppMessagingService : FirebaseMessagingService() {
 
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setSound(sound)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .build()
 
