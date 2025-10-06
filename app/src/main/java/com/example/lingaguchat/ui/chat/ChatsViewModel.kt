@@ -1,6 +1,7 @@
 package com.example.lingaguchat.ui.chat
 
 import androidx.lifecycle.ViewModel
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -72,7 +73,7 @@ class ChatsViewModel : ViewModel() {
                     val email = doc.getString("email") ?: return@mapNotNull null
                     val name = doc.getString("name") ?: email.substringBefore("@")
                     val isOnline = doc.getBoolean("online") ?: false
-                    val lastSeen = doc.getLong("lastSeen")
+                    val lastSeen = doc.getTimestamp("lastSeen") // ✅ ahora Timestamp
                     UserProfile(email = email, name = name, isOnline = isOnline, lastSeen = lastSeen)
                 }.orEmpty()
                 _contacts.value = profiles
@@ -103,6 +104,9 @@ class ChatsViewModel : ViewModel() {
                     "createdAt" to FieldValue.serverTimestamp(),
                     "lastTimestamp" to FieldValue.serverTimestamp()
                 )
+                println("📤 Creando chat con payload: $payload")
+                println("👤 Usuario actual: $normalizedCurrent")
+                println("👤 Otro usuario: $normalizedOther")
                 chatRef.set(payload, SetOptions.merge()).await()
             } else {
                 val existingMembers = snapshot.get("members") as? List<*>
@@ -150,6 +154,8 @@ class ChatsViewModel : ViewModel() {
                 "createdAt" to FieldValue.serverTimestamp(),
                 "lastTimestamp" to FieldValue.serverTimestamp()
             )
+
+
             chatRef.set(payload, SetOptions.merge()).await()
             chatRef.get().await().toChatSummary()
         } catch (e: Exception) {
@@ -194,6 +200,7 @@ class ChatsViewModel : ViewModel() {
             "text" -> MessageType.TEXT
             else -> null
         }
+
         return ChatSummary(
             id = id,
             type = chatType,
@@ -202,7 +209,7 @@ class ChatsViewModel : ViewModel() {
             lastMessage = getString("lastMessage"),
             lastMessageSender = getString("lastMessageSender"),
             lastMessageType = lastType,
-            lastTimestamp = getTimestamp("lastTimestamp")
+            lastTimestamp = getTimestamp("lastTimestamp") // ✅ Timestamp correcto
         )
     }
 }

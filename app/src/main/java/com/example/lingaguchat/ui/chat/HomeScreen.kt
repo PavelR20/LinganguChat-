@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import com.google.firebase.Timestamp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -511,13 +512,15 @@ private fun formatChatTimestamp(date: Date): String {
     return formatter.format(date)
 }
 
-private fun formatLastSeen(lastSeen: Long): String {
-    val formatter: DateFormat = if (isSameDay(lastSeen, System.currentTimeMillis())) {
+fun formatLastSeen(lastSeen: Timestamp): String {
+    val date = lastSeen.toDate()
+    val now = System.currentTimeMillis()
+    val formatter: DateFormat = if (isSameDay(date.time, now)) {
         DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
     } else {
         SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
     }
-    return "Últ. vez ${formatter.format(Date(lastSeen))}"
+    return "Últ. vez ${formatter.format(date)}"
 }
 
 private fun isSameDay(time1: Long, time2: Long): Boolean {

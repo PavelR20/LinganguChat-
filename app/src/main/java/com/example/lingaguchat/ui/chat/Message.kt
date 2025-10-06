@@ -39,5 +39,9 @@ data class UserProfile(
     val email: String = "",
     val name: String = "",
     val isOnline: Boolean = false,
-    val lastSeen: Long? = null
-)
+    val lastSeen: Timestamp? = null
+) {
+    // 🔹 Conversión opcional para usarlo como Long
+    val lastSeenMillis: Long?
+        get() = lastSeen?.toDate()?.time
+}

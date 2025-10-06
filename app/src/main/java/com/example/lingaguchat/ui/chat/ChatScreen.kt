@@ -5,16 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,28 +16,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,9 +31,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import java.text.DateFormat
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.UUID
+import java.util.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collectLatest
@@ -173,8 +142,15 @@ fun ChatScreen(
                         val name = snapshot?.getString("name") ?: destination.peerEmail.substringBefore("@")
                         title = name
                         val isOnline = snapshot?.getBoolean("online") ?: false
-                        val lastSeen = snapshot?.getLong("lastSeen")
-                        subtitle = if (isOnline) "En línea" else lastSeen?.let { formatLastSeen(it) }
+
+                        // ✅ FIX: usar Timestamp, no Long
+                        val lastSeenTimestamp = snapshot?.getTimestamp("lastSeen")
+                        subtitle = if (isOnline) {
+                            "En línea"
+                        } else {
+                            lastSeenTimestamp?.toDate()?.time?.let { formatLastSeen(it) }
+                        }
+
                         memberNames = memberNames.toMutableMap().apply {
                             put(destination.peerEmail, name)
                             put(currentUserEmail, currentUserEmail.substringBefore("@"))
@@ -327,17 +303,13 @@ fun ChatScreen(
                                     chatViewModel.sendImage(destination.chatId, imageUri, currentUserEmail, trimmed)
                                     text = ""
                                     selectedImageUri = null
-                                } catch (_: Exception) {
-                                    // error already handled via snackbar
-                                }
+                                } catch (_: Exception) {}
                             }
                             trimmed.isNotEmpty() -> {
                                 try {
                                     chatViewModel.sendText(destination.chatId, trimmed, currentUserEmail)
                                     text = ""
-                                } catch (_: Exception) {
-                                    // error already handled via snackbar
-                                }
+                                } catch (_: Exception) {}
                             }
                         }
                     }
@@ -517,10 +489,10 @@ private fun formatLastSeen(lastSeen: Long): String {
 }
 
 private fun isSameDay(time1: Long, time2: Long): Boolean {
-    val cal1 = java.util.Calendar.getInstance().apply { timeInMillis = time1 }
-    val cal2 = java.util.Calendar.getInstance().apply { timeInMillis = time2 }
-    return cal1.get(java.util.Calendar.YEAR) == cal2.get(java.util.Calendar.YEAR) &&
-        cal1.get(java.util.Calendar.DAY_OF_YEAR) == cal2.get(java.util.Calendar.DAY_OF_YEAR)
+    val cal1 = Calendar.getInstance().apply { timeInMillis = time1 }
+    val cal2 = Calendar.getInstance().apply { timeInMillis = time2 }
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+            cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
 }
 
 private const val ONE_DAY = 24 * 60 * 60 * 1000L
