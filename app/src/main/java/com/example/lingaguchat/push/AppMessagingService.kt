@@ -28,10 +28,19 @@ class AppMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         val data = remoteMessage.data
+        val event = data["event"] ?: "message"
+        when (event) {
+            "chat_created" -> handleChatCreatedEvent(data)
+            else -> handleMessageEvent(data)
+        }
+    }
+
+    private fun handleMessageEvent(data: Map<String, String>) {
         val messageId = data["messageId"] ?: return
         val chatId = data["chatId"] ?: return
         val destType = data["destType"] ?: "private"
         val peer = data["peer"] ?: return
+        val groupName = data["groupName"]
 
         FirebaseFirestore.getInstance()
             .collection("chats")
@@ -46,7 +55,7 @@ class AppMessagingService : FirebaseMessagingService() {
                 val decrypted = MessageCipher.decrypt(encryptedText).trim()
 
                 val title = when (destType) {
-                    "group" -> data["groupName"] ?: "Nuevo mensaje"
+                    "group" -> groupName ?: "Nuevo mensaje"
                     else -> data["senderName"] ?: peer.substringBefore("@")
                 }
 
@@ -56,8 +65,34 @@ class AppMessagingService : FirebaseMessagingService() {
                     decrypted.ifBlank { "Nuevo mensaje" }
                 }
 
-                showNotification(title, preview, destType, peer, chatId, messageId)
+                showNotification(title, preview, destType, peer, chatId, messageId, groupName)
             }
+    }
+
+    private fun handleChatCreatedEvent(data: Map<String, String>) {
+        val chatId = data["chatId"] ?: return
+        val destType = data["destType"] ?: "private"
+        val peer = data["peer"] ?: chatId
+        val creator = data["creator"]
+        val creatorName = data["creatorName"].takeUnless { it.isNullOrBlank() }
+            ?: creator?.substringBefore("@")
+            ?: "Nuevo chat"
+        val groupName = data["groupName"].takeUnless { it.isNullOrBlank() }
+
+        val title = if (destType == "group") {
+            groupName ?: "Nuevo grupo"
+        } else {
+            creatorName
+        }
+
+        val body = if (destType == "group") {
+            val groupLabel = groupName ?: "nuevo grupo"
+            "$creatorName creó el grupo $groupLabel"
+        } else {
+            "$creatorName inició un chat contigo"
+        }
+
+        showNotification(title, body, destType, peer, chatId, null, groupName)
     }
 
     private fun showNotification(
@@ -66,7 +101,8 @@ class AppMessagingService : FirebaseMessagingService() {
         destType: String,
         peer: String,
         chatId: String,
-        messageId: String
+        messageId: String?,
+        groupName: String?
     ) {
         createChannelIfNeeded()
 
@@ -76,7 +112,8 @@ class AppMessagingService : FirebaseMessagingService() {
             putExtra("destType", destType) // "private" | "group"
             putExtra("peer", peer)         // email o groupId
             putExtra("chatId", chatId)
-            putExtra("messageId", messageId)
+            groupName?.let { putExtra("groupName", it) }
+            messageId?.let { putExtra("messageId", it) }
         }
 
         val pendingIntent = PendingIntent.getActivity(

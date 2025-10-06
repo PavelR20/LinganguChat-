@@ -101,6 +101,7 @@ class ChatsViewModel : ViewModel() {
                     "type" to ChatType.DIRECT.name.lowercase(Locale.ROOT),
                     "members" to orderedMembers,
                     "directKey" to key,
+                    "createdBy" to normalizedCurrent,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "lastTimestamp" to FieldValue.serverTimestamp()
                 )
